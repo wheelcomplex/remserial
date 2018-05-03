@@ -39,20 +39,21 @@ fd_set fdsreaduse;
 struct hostent *remotehost;
 extern char *ptsname(int fd);
 int curConnects = 0;
+int maxfd = -1;
+
+int result;
+char devbuf[512];
+int devbytes;
+int remoteaddrlen;
+int c;
+int waitlogged = 0;
+int maxConnects = 1;
+int writeonly = 0;
 
 int main(int argc, char *argv[])
 {
-	int result;
 	extern char *optarg;
 	extern int optind;
-	int maxfd = -1;
-	char devbuf[512];
-	int devbytes;
-	int remoteaddrlen;
-	int c;
-	int waitlogged = 0;
-	int maxConnects = 1;
-	int writeonly = 0;
 	register int i;
 
 	openlog("remserial", LOG_PID, LOG_DAEMON);
@@ -168,6 +169,17 @@ int main(int argc, char *argv[])
 			exit(4);
 		}
 
+		int enable = 1;
+		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0)
+		{
+			applog(LOG_ERR, "setsockopt(SO_REUSEADDR) failed: %m");
+		}
+
+		if (setsockopt(sockfd, SOL_SOCKET, SO_REUSEPORT, &enable, sizeof(int)) < 0)
+		{
+			applog(LOG_ERR, "setsockopt(SO_REUSEPORT) failed: %m");
+		}
+
 		addr.sin_family = AF_INET;
 		addr.sin_addr.s_addr = 0;
 		addr.sin_port = htons(port);
@@ -179,8 +191,7 @@ int main(int argc, char *argv[])
 			applog(LOG_ERR, "Couldn't bind port %d, aborting: %m", port);
 			exit(5);
 		}
-		if (debug > 1)
-			applog(LOG_NOTICE, "Bound port");
+		applog(LOG_DEBUG, "Bound port");
 
 		/* Tell the system we want to listen on this socket */
 		result = listen(sockfd, 4);
@@ -190,8 +201,7 @@ int main(int argc, char *argv[])
 			exit(6);
 		}
 
-		if (debug > 1)
-			applog(LOG_NOTICE, "Done listen");
+		applog(LOG_DEBUG, "Done listen");
 
 		applog(LOG_NOTICE, "listening on %d socket %d ...", port, sockfd);
 	}
@@ -202,29 +212,6 @@ int main(int argc, char *argv[])
 		close(0);
 		close(1);
 		close(2);
-	}
-
-	/* Set up the files/sockets for the select() call */
-	FD_ZERO(&fdsreaduse);
-	if (sockfd != -1)
-	{
-		FD_SET(sockfd, &fdsreaduse);
-		if (sockfd >= maxfd)
-			maxfd = sockfd + 1;
-	}
-
-	for (i = 0; i < maxConnects; i++)
-	{
-		FD_SET(remotefd[i], &fdsreaduse);
-		if (remotefd[i] >= maxfd)
-			maxfd = remotefd[i] + 1;
-	}
-
-	if (!writeonly)
-	{
-		FD_SET(devfd, &fdsreaduse);
-		if (devfd >= maxfd)
-			maxfd = devfd + 1;
 	}
 
 	while (1)
@@ -238,8 +225,11 @@ int main(int argc, char *argv[])
 		/* Wait for data from the listening socket, the device
 		   or the remote connection */
 		// applog(LOG_DEBUG, "current connections %d/%d, try to select on socket %d", curConnects, maxConnects, sockfd);
-		FD_ZERO(&fdsreaduse);
-		FD_SET(sockfd, &fdsreaduse);
+
+		// Select() updates fd_set's, so we need to build fd_set's before each select()call.
+
+		setup_select();
+
 		int active = select(maxfd, &fdsreaduse, NULL, NULL, &tv);
 		if (active == 0)
 		{
@@ -251,10 +241,15 @@ int main(int argc, char *argv[])
 			break;
 		}
 
+		int matched = 0;
+
 		/* Activity on the controlling socket, only on server */
 		if (!machinename && FD_ISSET(sockfd, &fdsreaduse))
 		{
+			// new connection
 			int fd;
+
+			matched++;
 
 			/* Accept the remote systems attachment */
 			remoteaddrlen = sizeof(struct sockaddr_in);
@@ -262,16 +257,16 @@ int main(int argc, char *argv[])
 						&remoteaddrlen);
 
 			if (fd == -1)
+			{
 				applog(LOG_ERR, "accept failed: %m");
+			}
 			else if (curConnects < maxConnects)
 			{
 				unsigned long ip;
 
 				remotefd[curConnects++] = fd;
-				/* Tell select to watch this new socket */
-				FD_SET(fd, &fdsreaduse);
-				if (fd >= maxfd)
-					maxfd = fd + 1;
+				/* setup_select will watch this new socket */
+
 				ip = ntohl(remoteaddr.sin_addr.s_addr);
 				applog(LOG_NOTICE, "Connection from %d.%d.%d.%d",
 					   (int)(ip >> 24) & 0xff,
@@ -288,7 +283,8 @@ int main(int argc, char *argv[])
 		}
 		else
 		{
-			applog(LOG_DEBUG, "current connections %d/%d, connect to remote %s", curConnects, maxConnects, machinename);
+			// old connection or tty device
+			applog(LOG_DEBUG, "select ready for old connection or tty device, current connections %d/%d.", curConnects, maxConnects);
 		}
 
 		/* Data to read from the device */
@@ -296,12 +292,13 @@ int main(int argc, char *argv[])
 		{
 			devbytes = read(devfd, devbuf, 512);
 			//if ( debug>1 && devbytes>0 )
-			if (debug > 1)
-				applog(LOG_INFO, "Device: %d bytes", devbytes);
+			applog(LOG_DEBUG, "Device: %d bytes", devbytes);
+
+			matched++;
+
 			if (devbytes <= 0)
 			{
-				if (debug > 0)
-					applog(LOG_INFO, "%s closed", sdevname);
+				applog(LOG_DEBUG, "%s closed", sdevname);
 				close(devfd);
 				FD_CLR(devfd, &fdsreaduse);
 				while (1)
@@ -309,64 +306,133 @@ int main(int argc, char *argv[])
 					devfd = open(sdevname, O_RDWR);
 					if (devfd != -1)
 						break;
+
 					applog(LOG_ERR, "Open of %s failed: %m", sdevname);
 					if (errno != EIO)
 						exit(7);
 					sleep(1);
 				}
-				if (debug > 0)
-					applog(LOG_INFO, "%s re-opened", sdevname);
+
+				applog(LOG_DEBUG, "%s re-opened", sdevname);
 				if (sttyparms)
 					set_tty(devfd, sttyparms);
 				if (linkname)
 					link_slave(devfd);
-				FD_SET(devfd, &fdsreaduse);
-				if (devfd >= maxfd)
-					maxfd = devfd + 1;
 			}
 			else
 				for (i = 0; i < curConnects; i++)
-					write(remotefd[i], devbuf, devbytes);
+				{
+					int out = write(remotefd[i], devbuf, devbytes);
+					if (out == -1)
+					{
+						applog(LOG_ERR, "write out %d bytes from tty to connection#%d failed: %m", devbytes, i);
+						closeConn(i);
+					}
+					else
+					{
+						applog(LOG_DEBUG, "write out %d bytes from tty to connection#%d", out, i);
+					}
+				}
 		}
 
 		/* Data to read from the remote system */
 		for (i = 0; i < curConnects; i++)
+		{
 			if (FD_ISSET(remotefd[i], &fdsreaduse))
 			{
+
+				matched = 1;
 
 				devbytes = read(remotefd[i], devbuf, 512);
 
 				//if ( debug>1 && devbytes>0 )
-				if (debug > 1)
-					applog(LOG_INFO, "Remote: %d bytes", devbytes);
+				applog(LOG_DEBUG, "Remote: %d bytes", devbytes);
 
 				if (devbytes == 0)
 				{
-					register int j;
-
-					applog(LOG_NOTICE, "Connection closed");
-					close(remotefd[i]);
-					FD_CLR(remotefd[i], &fdsreaduse);
-					curConnects--;
-					for (j = i; j < curConnects; j++)
-						remotefd[j] = remotefd[j + 1];
-					if (machinename)
-					{
-						/* Wait for the server again */
-						remotefd[curConnects++] = connect_to(&addr);
-						FD_SET(remotefd[curConnects - 1], &fdsreaduse);
-						if (remotefd[curConnects - 1] >= maxfd)
-							maxfd = remotefd[curConnects - 1] + 1;
-					}
+					closeConn(i);
 				}
 				else if (devfd != -1)
+				{
 					/* Write the data to the device */
-					write(devfd, devbuf, devbytes);
+					int out = write(devfd, devbuf, devbytes);
+					if (out == -1)
+					{
+						applog(LOG_ERR, "write out %d bytes from connection#%d to %s failed: %m", out, i, sdevname);
+					}
+					else
+					{
+						applog(LOG_DEBUG, "write out %d bytes from connection#%d to %s", out, i, sdevname);
+					}
+
+					if (debug > 0)
+					{
+						out = write(remotefd[i], devbuf, devbytes);
+						applog(LOG_DEBUG, "echo back %d bytes to connection#%d", out, i);
+					}
+				}
 			}
+		}
+		if (matched == 0)
+		{
+			applog(LOG_DEBUG, "select ready but nothing matched");
+		}
 	}
 	close(sockfd);
 	for (i = 0; i < curConnects; i++)
 		close(remotefd[i]);
+}
+
+void setup_select()
+{
+	maxfd = -1;
+	
+	FD_ZERO(&fdsreaduse);
+
+	/* Set up the files/sockets for the select() call */
+	if (sockfd != -1)
+	{
+		FD_SET(sockfd, &fdsreaduse);
+		if (sockfd >= maxfd)
+			maxfd = sockfd + 1;
+	}
+
+	if (!writeonly && devfd != -1)
+	{
+		FD_SET(devfd, &fdsreaduse);
+		if (devfd >= maxfd)
+			maxfd = devfd + 1;
+	}
+
+	for (int i = 0; i < maxConnects; i++)
+	{
+		FD_SET(remotefd[i], &fdsreaduse);
+		if (remotefd[i] >= maxfd)
+			maxfd = remotefd[i] + 1;
+	}
+}
+
+void closeConn(int i)
+{
+	register int j;
+
+	applog(LOG_NOTICE, "Connection#%d closed", i);
+	FD_CLR(remotefd[i], &fdsreaduse);
+	close(remotefd[i]);
+	curConnects--;
+	for (j = i; j < curConnects; j++)
+	{
+		remotefd[j] = remotefd[j + 1];
+	}
+
+	if (machinename)
+	{
+		/* Wait for the server again */
+		remotefd[curConnects++] = connect_to(&addr);
+		FD_SET(remotefd[curConnects - 1], &fdsreaduse);
+		if (remotefd[curConnects - 1] >= maxfd)
+			maxfd = remotefd[curConnects - 1] + 1;
+	}
 }
 
 void sighandler(int sig)
@@ -417,15 +483,12 @@ int connect_to(struct sockaddr_in *addr)
 	extern int errno;
 	int sockfd;
 
-	if (debug > 0)
-	{
-		unsigned long ip = ntohl(addr->sin_addr.s_addr);
-		applog(LOG_NOTICE, "Trying to connect to %d.%d.%d.%d",
-			   (int)(ip >> 24) & 0xff,
-			   (int)(ip >> 16) & 0xff,
-			   (int)(ip >> 8) & 0xff,
-			   (int)(ip >> 0) & 0xff);
-	}
+	unsigned long ip = ntohl(addr->sin_addr.s_addr);
+	applog(LOG_DEBUG, "Trying to connect to %d.%d.%d.%d",
+		   (int)(ip >> 24) & 0xff,
+		   (int)(ip >> 16) & 0xff,
+		   (int)(ip >> 8) & 0xff,
+		   (int)(ip >> 0) & 0xff);
 
 	while (1)
 	{
@@ -470,6 +533,10 @@ int connect_to(struct sockaddr_in *addr)
 
 void applog(int priority, const char *fmt, ...)
 {
+	if (priority == LOG_DEBUG && debug < 1)
+	{
+		return;
+	}
 	va_list args;
 	va_start(args, fmt);
 	if (isdaemon == 0)

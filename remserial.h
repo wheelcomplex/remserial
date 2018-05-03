@@ -43,5 +43,7 @@ void link_slave(int fd);
 int connect_to(struct sockaddr_in *addr);
 void usage(char *progname);
 void applog(int priority, const char *format, ...);
+void closeConn(int i);
+void setup_select();
 
 #endif

@@ -1,0 +1,6 @@
+{
+    "code-runner.executorMap": {
+        "cpp": "cd `dirname $fullFileName` && make clean && make all",
+        "c": "cd `dirname $fullFileName` && make clean && make all",
+    }
+}
