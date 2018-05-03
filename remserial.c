@@ -24,10 +24,10 @@
 #include "stty.h"
 #include "remserial.h"
 
-struct sockaddr_in addr,remoteaddr;
+struct sockaddr_in addr, remoteaddr;
 int sockfd = -1;
 int port = 23000;
-int debug=0;
+int debug = 0;
 int devfd;
 int *remotefd;
 char *machinename = NULL;
@@ -37,7 +37,7 @@ char *linkname = NULL;
 int isdaemon = 0;
 fd_set fdsreaduse;
 struct hostent *remotehost;
-extern char* ptsname(int fd);
+extern char *ptsname(int fd);
 int curConnects = 0;
 
 int main(int argc, char *argv[])
@@ -57,8 +57,10 @@ int main(int argc, char *argv[])
 
 	openlog("remserial", LOG_PID, LOG_DAEMON);
 
-	while ( (c=getopt(argc,argv,"hdl:m:p:r:s:wx:f:")) != EOF ) {
-		switch (c) {
+	while ((c = getopt(argc, argv, "hdl:m:p:r:s:wx:f:")) != EOF)
+	{
+		switch (c)
+		{
 		case 'd':
 			isdaemon = 1;
 			break;
@@ -93,28 +95,31 @@ int main(int argc, char *argv[])
 		}
 	}
 
-	if (sdevname == NULL){
+	if (sdevname == NULL)
+	{
 		char *msg = "-f <device>, tty device option not found.";
 		applog(LOG_ERR, msg);
 		usage(msg);
 		exit(1);
 	}
 
-	remotefd = (int *) malloc (maxConnects * sizeof(int));
+	remotefd = (int *)malloc(maxConnects * sizeof(int));
 
 	applog(LOG_NOTICE, "opening %s ...", sdevname);
 
 	// struct group *getgrgid(gid_t gid);
 
-	if (isdaemon == 0) {
+	if (isdaemon == 0)
+	{
 		applog(LOG_NOTICE, "sdevname=%s, port=%d, stty=%s", sdevname, port, sttyparms);
 	}
 
 	if (writeonly)
-		devfd = open(sdevname,O_WRONLY);
+		devfd = open(sdevname, O_WRONLY);
 	else
-		devfd = open(sdevname,O_RDWR);
-	if ( devfd == -1 ) {
+		devfd = open(sdevname, O_RDWR);
+	if (devfd == -1)
+	{
 		applog(LOG_ERR, "Open of %s failed: %m", sdevname);
 		exit(2);
 	}
@@ -122,37 +127,43 @@ int main(int argc, char *argv[])
 	if (linkname)
 		link_slave(devfd);
 
-	if ( sttyparms ) {
-		set_tty(devfd,sttyparms);
+	if (sttyparms)
+	{
+		set_tty(devfd, sttyparms);
 	}
 
-	signal(SIGINT,sighandler);
-	signal(SIGHUP,sighandler);
-	signal(SIGTERM,sighandler);
+	signal(SIGINT, sighandler);
+	signal(SIGHUP, sighandler);
+	signal(SIGTERM, sighandler);
 
-	if ( machinename ) {
+	if (machinename)
+	{
 		/* We are the client,
 		   Find the IP address for the remote machine */
 		remotehost = gethostbyname(machinename);
-		if ( !remotehost ) {
+		if (!remotehost)
+		{
 			applog(LOG_ERR, "Couldn't determine address of %s",
-				machinename );
+				   machinename);
 			exit(3);
 		}
 
 		/* Copy it into the addr structure */
 		addr.sin_family = AF_INET;
-		memcpy(&(addr.sin_addr),remotehost->h_addr_list[0],
-			sizeof(struct in_addr));
+		memcpy(&(addr.sin_addr), remotehost->h_addr_list[0],
+			   sizeof(struct in_addr));
 		addr.sin_port = htons(port);
 
 		remotefd[curConnects++] = connect_to(&addr);
-	} else {
+	}
+	else
+	{
 		/* We are the server */
 
 		/* Open the initial socket for communications */
 		sockfd = socket(AF_INET, SOCK_STREAM, 6);
-		if ( sockfd == -1 ) {
+		if (sockfd == -1)
+		{
 			applog(LOG_ERR, "Can't open socket: %m");
 			exit(4);
 		}
@@ -160,30 +171,33 @@ int main(int argc, char *argv[])
 		addr.sin_family = AF_INET;
 		addr.sin_addr.s_addr = 0;
 		addr.sin_port = htons(port);
-	 
+
 		/* Set up to listen on the given port */
-		if( bind( sockfd, (struct sockaddr*)(&addr),
-			sizeof(struct sockaddr_in)) < 0 ) {
-			applog(LOG_ERR, "Couldn't bind port %d, aborting: %m",port );
+		if (bind(sockfd, (struct sockaddr *)(&addr),
+				 sizeof(struct sockaddr_in)) < 0)
+		{
+			applog(LOG_ERR, "Couldn't bind port %d, aborting: %m", port);
 			exit(5);
 		}
-		if ( debug>1 )
-			applog(LOG_NOTICE,"Bound port");
+		if (debug > 1)
+			applog(LOG_NOTICE, "Bound port");
 
 		/* Tell the system we want to listen on this socket */
 		result = listen(sockfd, 4);
-		if ( result == -1 ) {
+		if (result == -1)
+		{
 			applog(LOG_ERR, "Socket listen failed: %m");
 			exit(6);
 		}
 
-		if ( debug>1 )
-			applog(LOG_NOTICE,"Done listen");
+		if (debug > 1)
+			applog(LOG_NOTICE, "Done listen");
 
 		applog(LOG_NOTICE, "listening on %d socket %d ...", port, sockfd);
 	}
 
-	if ( isdaemon ) {
+	if (isdaemon)
+	{
 		setsid();
 		close(0);
 		close(1);
@@ -192,149 +206,166 @@ int main(int argc, char *argv[])
 
 	/* Set up the files/sockets for the select() call */
 	FD_ZERO(&fdsreaduse);
-	if ( sockfd != -1 ) {
-		FD_SET(sockfd,&fdsreaduse);
-		if ( sockfd >= maxfd )
+	if (sockfd != -1)
+	{
+		FD_SET(sockfd, &fdsreaduse);
+		if (sockfd >= maxfd)
 			maxfd = sockfd + 1;
 	}
 
-	for (i=0 ; i<maxConnects ; i++) {
-		FD_SET(remotefd[i],&fdsreaduse);
-		if ( remotefd[i] >= maxfd )
+	for (i = 0; i < maxConnects; i++)
+	{
+		FD_SET(remotefd[i], &fdsreaduse);
+		if (remotefd[i] >= maxfd)
 			maxfd = remotefd[i] + 1;
 	}
 
-	if (!writeonly) {
-		FD_SET(devfd,&fdsreaduse);
-		if ( devfd >= maxfd )
+	if (!writeonly)
+	{
+		FD_SET(devfd, &fdsreaduse);
+		if (devfd >= maxfd)
 			maxfd = devfd + 1;
 	}
 
-	while (1) {
+	while (1)
+	{
 
-			int waitms = 3000;
-			struct timeval tv;
-  			tv.tv_sec = 0;
-  			tv.tv_usec = waitms * 1000;
+		int waitms = 3000;
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = waitms * 1000;
 
 		/* Wait for data from the listening socket, the device
 		   or the remote connection */
 		// applog(LOG_DEBUG, "current connections %d/%d, try to select on socket %d", curConnects, maxConnects, sockfd);
 		FD_ZERO(&fdsreaduse);
 		FD_SET(sockfd, &fdsreaduse);
-		int active = select(maxfd, &fdsreaduse,NULL,NULL,&tv);
-		if (active == 0){
+		int active = select(maxfd, &fdsreaduse, NULL, NULL, &tv);
+		if (active == 0)
+		{
 			continue;
 		}
 		applog(LOG_DEBUG, "current connections %d/%d, select return active %d", curConnects, maxConnects, active);
-		if (active == -1) {
+		if (active == -1)
+		{
 			break;
 		}
 
 		/* Activity on the controlling socket, only on server */
-		if ( !machinename && FD_ISSET(sockfd, &fdsreaduse) ) {
+		if (!machinename && FD_ISSET(sockfd, &fdsreaduse))
+		{
 			int fd;
 
 			/* Accept the remote systems attachment */
 			remoteaddrlen = sizeof(struct sockaddr_in);
-			fd = accept(sockfd,(struct sockaddr*)(&remoteaddr),
-				&remoteaddrlen);
+			fd = accept(sockfd, (struct sockaddr *)(&remoteaddr),
+						&remoteaddrlen);
 
-			if ( fd == -1 )
-				applog(LOG_ERR,"accept failed: %m");
-			else if (curConnects < maxConnects) {
+			if (fd == -1)
+				applog(LOG_ERR, "accept failed: %m");
+			else if (curConnects < maxConnects)
+			{
 				unsigned long ip;
 
 				remotefd[curConnects++] = fd;
 				/* Tell select to watch this new socket */
-				FD_SET(fd,&fdsreaduse);
-				if ( fd >= maxfd )
+				FD_SET(fd, &fdsreaduse);
+				if (fd >= maxfd)
 					maxfd = fd + 1;
 				ip = ntohl(remoteaddr.sin_addr.s_addr);
 				applog(LOG_NOTICE, "Connection from %d.%d.%d.%d",
-					(int)(ip>>24)&0xff,
-					(int)(ip>>16)&0xff,
-					(int)(ip>>8)&0xff,
-					(int)(ip>>0)&0xff);
+					   (int)(ip >> 24) & 0xff,
+					   (int)(ip >> 16) & 0xff,
+					   (int)(ip >> 8) & 0xff,
+					   (int)(ip >> 0) & 0xff);
 			}
-			else {
+			else
+			{
 				// Too many connections, just close it to reject
 				applog(LOG_DEBUG, "too many connections %d/%d.", curConnects, maxConnects);
 				close(fd);
 			}
-		} else {
+		}
+		else
+		{
 			applog(LOG_DEBUG, "current connections %d/%d, connect to remote %s", curConnects, maxConnects, machinename);
 		}
 
 		/* Data to read from the device */
-		if ( FD_ISSET(devfd,&fdsreaduse) ) {
-			devbytes = read(devfd,devbuf,512);
+		if (FD_ISSET(devfd, &fdsreaduse))
+		{
+			devbytes = read(devfd, devbuf, 512);
 			//if ( debug>1 && devbytes>0 )
-			if (debug>1)
-				applog(LOG_INFO,"Device: %d bytes",devbytes);
-			if ( devbytes <= 0 ) {
-				if ( debug>0 )
-					applog(LOG_INFO,"%s closed",sdevname);
+			if (debug > 1)
+				applog(LOG_INFO, "Device: %d bytes", devbytes);
+			if (devbytes <= 0)
+			{
+				if (debug > 0)
+					applog(LOG_INFO, "%s closed", sdevname);
 				close(devfd);
-				FD_CLR(devfd,&fdsreaduse);
-				while (1) {
-					devfd = open(sdevname,O_RDWR);
-					if ( devfd != -1 )
+				FD_CLR(devfd, &fdsreaduse);
+				while (1)
+				{
+					devfd = open(sdevname, O_RDWR);
+					if (devfd != -1)
 						break;
 					applog(LOG_ERR, "Open of %s failed: %m", sdevname);
-					if ( errno != EIO )
+					if (errno != EIO)
 						exit(7);
 					sleep(1);
 				}
-				if ( debug>0 )
-					applog(LOG_INFO,"%s re-opened",sdevname);
-				if ( sttyparms )
-					set_tty(devfd,sttyparms);
+				if (debug > 0)
+					applog(LOG_INFO, "%s re-opened", sdevname);
+				if (sttyparms)
+					set_tty(devfd, sttyparms);
 				if (linkname)
 					link_slave(devfd);
-				FD_SET(devfd,&fdsreaduse);
-				if ( devfd >= maxfd )
+				FD_SET(devfd, &fdsreaduse);
+				if (devfd >= maxfd)
 					maxfd = devfd + 1;
 			}
 			else
-				for (i=0 ; i<curConnects ; i++)
-					write(remotefd[i],devbuf,devbytes);
+				for (i = 0; i < curConnects; i++)
+					write(remotefd[i], devbuf, devbytes);
 		}
 
 		/* Data to read from the remote system */
-		for (i=0 ; i<curConnects ; i++)
-			if (FD_ISSET(remotefd[i],&fdsreaduse) ) {
+		for (i = 0; i < curConnects; i++)
+			if (FD_ISSET(remotefd[i], &fdsreaduse))
+			{
 
-				devbytes = read(remotefd[i],devbuf,512);
+				devbytes = read(remotefd[i], devbuf, 512);
 
 				//if ( debug>1 && devbytes>0 )
-				if (debug>1)
-					applog(LOG_INFO,"Remote: %d bytes",devbytes);
+				if (debug > 1)
+					applog(LOG_INFO, "Remote: %d bytes", devbytes);
 
-				if ( devbytes == 0 ) {
+				if (devbytes == 0)
+				{
 					register int j;
 
-					applog(LOG_NOTICE,"Connection closed");
+					applog(LOG_NOTICE, "Connection closed");
 					close(remotefd[i]);
-					FD_CLR(remotefd[i],&fdsreaduse);
+					FD_CLR(remotefd[i], &fdsreaduse);
 					curConnects--;
-					for (j=i ; j<curConnects ; j++)
-						remotefd[j] = remotefd[j+1];
-					if ( machinename ) {
+					for (j = i; j < curConnects; j++)
+						remotefd[j] = remotefd[j + 1];
+					if (machinename)
+					{
 						/* Wait for the server again */
 						remotefd[curConnects++] = connect_to(&addr);
-						FD_SET(remotefd[curConnects-1],&fdsreaduse);
-						if ( remotefd[curConnects-1] >= maxfd )
-							maxfd = remotefd[curConnects-1] + 1;
+						FD_SET(remotefd[curConnects - 1], &fdsreaduse);
+						if (remotefd[curConnects - 1] >= maxfd)
+							maxfd = remotefd[curConnects - 1] + 1;
 					}
 				}
-				else if ( devfd != -1 )
+				else if (devfd != -1)
 					/* Write the data to the device */
-					write(devfd,devbuf,devbytes);
-		}
+					write(devfd, devbuf, devbytes);
+			}
 	}
 	close(sockfd);
-	for (i=0 ; i<curConnects ; i++)
+	for (i = 0; i < curConnects; i++)
 		close(remotefd[i]);
 }
 
@@ -342,15 +373,15 @@ void sighandler(int sig)
 {
 	int i;
 
-	if ( sockfd != -1 )
+	if (sockfd != -1)
 		close(sockfd);
-	for (i=0 ; i<curConnects ; i++)
+	for (i = 0; i < curConnects; i++)
 		close(remotefd[i]);
-	if ( devfd != -1 )
+	if (devfd != -1)
 		close(devfd);
 	if (linkname)
 		unlink(linkname);
-	applog(LOG_ERR,"Terminating on signal %d",sig);
+	applog(LOG_ERR, "Terminating on signal %d", sig);
 	exit(0);
 }
 
@@ -360,9 +391,11 @@ void link_slave(int fd)
 	int status = grantpt(devfd);
 	if (status != -1)
 		status = unlockpt(devfd);
-	if (status != -1) {
+	if (status != -1)
+	{
 		slavename = ptsname(devfd);
-		if (slavename) {
+		if (slavename)
+		{
 			// Safety first
 			unlink(linkname);
 			status = symlink(slavename, linkname);
@@ -370,33 +403,36 @@ void link_slave(int fd)
 		else
 			status = -1;
 	}
-	if (status == -1) {
+	if (status == -1)
+	{
 		applog(LOG_ERR, "Cannot create link for pseudo-tty: %m");
 		exit(8);
 	}
 }
 
-int
-connect_to(struct sockaddr_in *addr)
+int connect_to(struct sockaddr_in *addr)
 {
 	int waitlogged = 0;
 	int stat;
 	extern int errno;
 	int sockfd;
 
-	if ( debug>0 ) {
+	if (debug > 0)
+	{
 		unsigned long ip = ntohl(addr->sin_addr.s_addr);
 		applog(LOG_NOTICE, "Trying to connect to %d.%d.%d.%d",
-			(int)(ip>>24)&0xff,
-			(int)(ip>>16)&0xff,
-			(int)(ip>>8)&0xff,
-			(int)(ip>>0)&0xff);
+			   (int)(ip >> 24) & 0xff,
+			   (int)(ip >> 16) & 0xff,
+			   (int)(ip >> 8) & 0xff,
+			   (int)(ip >> 0) & 0xff);
 	}
 
-	while (1) {
+	while (1)
+	{
 		/* Open the socket for communications */
 		sockfd = socket(AF_INET, SOCK_STREAM, 6);
-		if ( sockfd == -1 ) {
+		if (sockfd == -1)
+		{
 			applog(LOG_ERR, "Can't open socket: %m");
 			exit(9);
 		}
@@ -404,47 +440,53 @@ connect_to(struct sockaddr_in *addr)
 		/* Try to connect to the remote server,
 		   if it fails, keep trying */
 
-		stat = connect(sockfd, (struct sockaddr*)addr,
-			sizeof(struct sockaddr_in));
-		if ( debug>1 )
+		stat = connect(sockfd, (struct sockaddr *)addr,
+					   sizeof(struct sockaddr_in));
+		if (debug > 1)
 			if (stat == -1)
-				applog(LOG_NOTICE, "Connect status %d, errno %d: %m\n", stat,errno);
+				applog(LOG_NOTICE, "Connect status %d, errno %d: %m\n", stat, errno);
 			else
 				applog(LOG_NOTICE, "Connect status %d\n", stat);
 
-		if ( stat == 0 )
+		if (stat == 0)
 			break;
 		/* Write a message to applog once */
-		if ( ! waitlogged ) {
+		if (!waitlogged)
+		{
 			applog(LOG_NOTICE,
-				"Waiting for server on %s port %d: %m",
-				machinename,port );
+				   "Waiting for server on %s port %d: %m",
+				   machinename, port);
 			waitlogged = 1;
 		}
 		close(sockfd);
 		sleep(10);
 	}
-	if ( waitlogged || debug>0 )
+	if (waitlogged || debug > 0)
 		applog(LOG_NOTICE,
-			"Connected to server %s port %d",
-			machinename,port );
+			   "Connected to server %s port %d",
+			   machinename, port);
 	return sockfd;
 }
 
-void applog(int priority, const char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-	if (isdaemon == 0){
+void applog(int priority, const char *fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	if (isdaemon == 0)
+	{
 		printf("%s", "DEBUG: ");
 		vprintf(fmt, args);
 		printf("%s", "\r\n");
-	} else {
-		syslog(priority, fmt,args);
 	}
-    va_end(args);
+	else
+	{
+		syslog(priority, fmt, args);
+	}
+	va_end(args);
 }
 
-void usage(char *progname) {
+void usage(char *progname)
+{
 	printf("Remserial version 1.3.  Usage:\n");
 	printf("remserial [-r machinename] [-p netport] [-s \"stty params\"] [-m maxconnect] <-f device>\n\n");
 
