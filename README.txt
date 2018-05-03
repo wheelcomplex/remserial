@@ -30,7 +30,7 @@ Some examples:
 The computer with the serial port connected to the device (such as a
 data acquisition device) runs the remserial program:
 
-	remserial -d -p 23000 -s "9600 raw" /dev/ttyS0 &
+	remserial -d -p 23000 -s "9600 raw" -f /dev/ttyS0 &
 
 This starts the program in daemon mode so that it runs in the background,
 it waits for connections on port 23000 and sets up the serial port
@@ -45,7 +45,7 @@ or set up as a system service with a file in /etc/rc.init/.
 The computer with the serial port connected to the device (such as a
 data acquisition device) runs the remserial program:
 
-	remserial -d -r server-name -p 23000 -s "9600 raw" /dev/ttyS0 &
+	remserial -d -r server-name -p 23000 -s "9600 raw" -f /dev/ttyS0 &
 
 This would be used with case number 1 above creating an end-to-end serial
 port connection.  What goes in the serial port on one machine would come
@@ -81,10 +81,10 @@ serial port as their console instead of a monitor/keyboard, their serial
 ports could be connected to a control server using a multi-port serial board.
 On the control server, a copy of remserial is run for each server:
 
-	remserial -d -p 23000 -s "115200 raw" /dev/ttyS0 &
-	remserial -d -p 23001 -s "115200 raw" /dev/ttyS1 &
-	remserial -d -p 23002 -s "115200 raw" /dev/ttyS2 &
-	remserial -d -p 23003 -s "115200 raw" /dev/ttyS3 &
+	remserial -d -p 23000 -s "115200 raw" -f /dev/ttyS0 &
+	remserial -d -p 23001 -s "115200 raw" -f /dev/ttyS1 &
+	remserial -d -p 23002 -s "115200 raw" -f /dev/ttyS2 &
+	remserial -d -p 23003 -s "115200 raw" -f /dev/ttyS3 &
 	etc.
 
 From any computer on the local network, use a telnet program to connect
